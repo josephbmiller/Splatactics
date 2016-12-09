@@ -3,10 +3,12 @@ div#grid {
 }
 div#squids {
     position:absolute;
+    pointer-events: none;
 }
 div.tile {
     position: absolute;
     border: 1px solid black;
+    margin: 1px;
 }
 div.squid {
     position: absolute;

@@ -58,16 +58,16 @@ function main() {
     function createSquid(type) {
         var squid = {};
         squid.type = type;
-        squid.i = 0;
-        squid.j = 0;
+        squid.x = 0;
+        squid.y = 0;
         squid.ink = 100;
         squid.div = null;
-        squid.setPosition = function(i, j) {
-            this.i = i;
-            this.j = j;
+        squid.setPosition = function(x, y) {
+            this.x = x;
+            this.y = y;
             if (this.div) {
-                this.div.css('left', i * tileSize);
-                this.div.css('top', j * tileSize);
+                this.div.css('left', x * tileSize);
+                this.div.css('top', y * tileSize);
             }
         };
         return squid;
@@ -101,28 +101,40 @@ function main() {
     function setSquidStartingPositions(squad) {
         for(var i = 0; i < squad.squids.length; i++) {
             squad.squids[i].setPosition(squad.startingPositions[i][0], squad.startingPositions[i][1]);
+            setTileColor(getTile(squad.startingPositions[i][0], squad.startingPositions[i][1]), squad.color);
         }
     }
     
-    function tileId(i, j) {
-        return 'tile'+i+'.'+j;
+    function tileId(x, y) {
+        return 'tile'+x+'-'+y;
     }
     
     function initGrid() {
         var mainDiv = $('#grid');
         for(var i = 0; i < gridSize; i++) {
             for(var j = 0; j < gridSize; j++) {
-                mainDiv.append($('<div>').attr('id', tileId(i,j)).addClass('tile').width(tileSize).height(tileSize).css('left', i*tileSize).css('top', j*tileSize));
+                mainDiv.append($('<div>').attr('id', tileId(i,j)).addClass('tile').width(tileSize-1).height(tileSize-1).css('left', i*tileSize).css('top', j*tileSize));
             }
         }
     }
     
-    function getTile(i, j) {
-        return $('#'+tileId(i,j));
+    function getTile(x, y) {
+        return $('#'+tileId(x,y));
     }
     
     function setTileColor(tile, color) {
-        tile.style('color', color);
+        tile.css('border', '1px solid '+color);
+    }
+
+    function getSquidAtPosition(x, y) {
+        for(var i = 0; i < squads.length; i++) {
+            for(var j = 0; j < squads[i].squids.length; j++) {
+                if(squads[i].squids[j].x == x && squads[i].squids[j].y == y) {
+                    return squads[i].squids[j];
+                }
+            }
+        }
+        return null;
     }
     
 
@@ -139,9 +151,18 @@ function main() {
         setSquidStartingPositions(squads[i]);
     }
 
-    alphaColor = '#FF0000';
-    bravoColor = '#00FF00';
-    console.log('hello');
+    var mainDiv = $('#grid');
+    mainDiv.click(function(e) {
+        if(e.target.id.indexOf('tile') != 0) {
+            console.log("FATAL ERROR: thing we clicked was not a tile");
+            return;
+        }
+        coords = e.target.id.substring(4).split('.');
+        var squid = getSquidAtPosition(coords[0], coords[1]);
+        var tile = getTile(coords[0], coords[1]);
+
+        console.log(tile);
+    })
 }
 
 
