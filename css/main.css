@@ -1,7 +1,13 @@
 div#grid {
     position: absolute;
-    border: 1px solid black;
+}
+div#squids {
+    position:absolute;
 }
 div.tile {
+    position: absolute;
     border: 1px solid black;
+}
+div.squid {
+    position: absolute;
 }

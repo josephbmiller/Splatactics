@@ -1,8 +1,7 @@
 function main() {
 
     var gridSize = 10;
-    var tileSize = 32;
-    var mainDiv = $('#grid');
+    var tileSize = 64;
 
     var squidTypes = [ 'shooter', 'blaster', 'roller', 'charger' ];
     var squidProps = {
@@ -52,7 +51,7 @@ function main() {
             name: 'bravo',
             color: '#FF0000',
             squids: [],
-            startingPositions: [[gridsize-1,gridsize-1],[gridsize-1,gridsize-2],[gridsize-1,gridsize-3],[gridsize-1,gridsize-4]]
+            startingPositions: [[gridSize-1,gridSize-1],[gridSize-1,gridSize-2],[gridSize-1,gridSize-3],[gridSize-1,gridSize-4]]
         }
     ];
     
@@ -81,19 +80,21 @@ function main() {
     }
 
     function initSquids(squad) {
-        squad.squids.add(createSquid('shooter'));
-        squad.squids.add(createSquid('blaster'));
-        squad.squids.add(createSquid('roller'));
-        squad.squids.add(createSquid('charger'));
+        squad.squids.push(createSquid('shooter'));
+        squad.squids.push(createSquid('blaster'));
+        squad.squids.push(createSquid('roller'));
+        squad.squids.push(createSquid('charger'));
     }
 
     function createSquidDivs(squad) {
+        squidsDiv = $('#squids');
         for(var i = 0; i < squad.squids.length; i++) {
             var div = $('<div>');
-            div.id('squid'+squad.name+i);
-            div.class('squid');
+            div.attr('id', 'squid'+squad.name+i);
+            div.addClass('squid');
             div.html(squad.squids[i].type.substring(0,1).toUpperCase());
             squad.squids[i].div = div;
+            squidsDiv.append(div);
         }
     }
 
@@ -108,9 +109,10 @@ function main() {
     }
     
     function initGrid() {
+        var mainDiv = $('#grid');
         for(var i = 0; i < gridSize; i++) {
             for(var j = 0; j < gridSize; j++) {
-                mainDiv.append($('<div>').id(tileId(i,j)).class('tile').width(tileSize).height(tileSize));
+                mainDiv.append($('<div>').attr('id', tileId(i,j)).addClass('tile').width(tileSize).height(tileSize).css('left', i*tileSize).css('top', j*tileSize));
             }
         }
     }
@@ -139,7 +141,7 @@ function main() {
 
     alphaColor = '#FF0000';
     bravoColor = '#00FF00';
-    
+    console.log('hello');
 }
 
 
