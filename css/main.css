@@ -1,15 +1,33 @@
 div#grid {
+    position: relative;
+    display: inline-block;
+}
+div#tiles {
     position: absolute;
+}
+div.tile {
+    position: absolute;
+    border: 1px solid black;
 }
 div#squids {
     position:absolute;
     pointer-events: none;
 }
-div.tile {
-    position: absolute;
-    border: 1px solid black;
-    margin: 1px;
-}
 div.squid {
     position: absolute;
+}
+div#info {
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
+}
+div#squidInfo {
+}
+div#squidInfo h4 {
+    margin: 0px;
+}
+div#terrainInfo {
+}
+.possibleMove {
+    background-color: rgba(0,0,255,0.5) !important
 }
