@@ -1,0 +1,7 @@
+div#grid {
+    position: absolute;
+    border: 1px solid black;
+}
+div.tile {
+    border: 1px solid black;
+}
