@@ -3,6 +3,8 @@ function main() {
     var gridSize = 10;
     var tileSize = 32;
     var inkOpacity = 0.5;
+    var unSubmergedHeal = 15;
+    var submergedHeal = 45;
     var activeSquad;
     var activeSquid;
     
@@ -37,7 +39,7 @@ function main() {
             width: 3,
             rollSpeed: 3,
             damage: 200,
-            inkCost: 30,
+            inkCost: 50,
             flickRange: 3,
             flickSpread: 5,
             flickGlobs: 3,
@@ -50,8 +52,9 @@ function main() {
             chargeSpeed: 2,
             damageMin: 40,
             damageMax: 120,
-            minInkCost: 30,
-            maxInkCost: 60
+            inkCost: 10,
+            minInkCost: 10,
+            maxInkCost: 50
         }
     };
     
@@ -86,6 +89,7 @@ function main() {
         squid.canMove = true;
         squid.canAttack = true;
         squid.submerged = false;
+        squid.props = squidProps[type];
         if(squid.type === 'charger') {
             squid.attackType = 'uncharged';
         }
@@ -106,24 +110,36 @@ function main() {
         };
         squid.submerge = function() {
             this.submerged = true;
+            if(this.type === 'charger') {
+                this.attackType = 'uncharged';
+                this.moveBudget = 6;
+                this.props.inkCost = this.props.minInkCost;
+            }
             this.div.addClass('submerged');
+            displaySquidInfo(this);
         };
-        squid.surface = function() {
+        squid.emerge = function() {
             this.submerged = false;
             this.div.removeClass('submerged');
+            this.div.removeClass('hidden');
+            displaySquidInfo(this);
         };
         squid.attack = function(xtar, ytar) {
-            attackProps = squidProps[this.type];
-            var xdir, ydir, i;
+            this.props = squidProps[this.type];
+            var xdir, ydir, i, xshots, yshots;
             xdir = xtar - this.x;
             ydir = ytar - this.y;
+            this.ink -= this.props.inkCost;
+            if(this.submerged) {
+                this.emerge();
+            }
             if(this.type === 'shooter') {
                 this.canMove = true;
-                if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, attackProps.damage*attackProps.shotsPerRound)) { return; }
-                if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, attackProps.damage*attackProps.shotsPerRound)) { return; }
+                if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, this.props.damage*this.props.shotsPerRound)) { return; }
+                if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, this.props.damage*this.props.shotsPerRound)) { return; }
                 var emptySpace = Math.floor(Math.random() * 4);
                 if(xdir) {
-                    var xshots = [
+                    xshots = [
                         [[1,0],[2,0]],
                         [[3,1],[4,1]],
                         [[3,0],[4,0]],
@@ -131,12 +147,12 @@ function main() {
                     ];
                     for(i = 0; i < 4; i++) {
                         if(emptySpace === i) continue;
-                        if(paintSquare(this.x+xshots[i][0][0]*xdir, this.y+xshots[i][0][1], this.squad, attackProps.damage)) { continue; }
-                        paintSquare(this.x+xshots[i][1][0]*xdir, this.y+xshots[i][1][1], this.squad, attackProps.damage);
+                        if(paintSquare(this.x+xshots[i][0][0]*xdir, this.y+xshots[i][0][1], this.squad, this.props.damage)) { continue; }
+                        paintSquare(this.x+xshots[i][1][0]*xdir, this.y+xshots[i][1][1], this.squad, this.props.damage);
                     }
                 }
                 else {
-                    var yshots = [
+                    yshots = [
                         [[0,1],[0,2]],
                         [[1,3],[1,4]],
                         [[0,3],[0,4]],
@@ -144,28 +160,28 @@ function main() {
                     ];
                     for(i = 0; i < 4; i++) {
                         if(emptySpace === i) continue;
-                        if(paintSquare(this.x+yshots[i][0][0], this.y+yshots[i][0][1]*ydir, this.squad, attackProps.damage)) { continue; }
-                        paintSquare(this.x+yshots[i][1][0], this.y+yshots[i][1][1]*ydir, this.squad, attackProps.damage);
+                        if(paintSquare(this.x+yshots[i][0][0], this.y+yshots[i][0][1]*ydir, this.squad, this.props.damage)) { continue; }
+                        paintSquare(this.x+yshots[i][1][0], this.y+yshots[i][1][1]*ydir, this.squad, this.props.damage);
                     }
                 }
             }
             else if(this.type === 'blaster') {
-                paintSquare(this.x, this.y, this.squad, attackProps.directDamage);
-                if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, attackProps.directDamage)) {
+                paintSquare(this.x, this.y, this.squad, this.props.directDamage);
+                if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, this.props.directDamage)) {
                     for(i = 0; i < 4; i ++) {
-                        paintSquare(this.x+(xdir)+xs[i], this.y+(ydir)+ys[i], this.squad, attackProps.splashDamage);
+                        paintSquare(this.x+(xdir)+xs[i], this.y+(ydir)+ys[i], this.squad, this.props.splashDamage);
                     }
                     return;
                 }
-                if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, attackProps.directDamage)) {
+                if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, this.props.directDamage)) {
                     for(i = 0; i < 4; i ++) {
-                        paintSquare(this.x+(xdir*2)+xs[i], this.y+(ydir*2)+ys[i], this.squad, attackProps.splashDamage);
+                        paintSquare(this.x+(xdir*2)+xs[i], this.y+(ydir*2)+ys[i], this.squad, this.props.splashDamage);
                     }
                     return;
                 }
-                paintSquare(this.x+(xdir*3), this.y+(ydir*3), this.squad, attackProps.directDamage);
+                paintSquare(this.x+(xdir*3), this.y+(ydir*3), this.squad, this.props.directDamage);
                 for(i = 0; i < 4; i ++) {
-                    paintSquare(this.x+(xdir*3)+xs[i], this.y+(ydir*3)+ys[i], this.squad, attackProps.splashDamage);
+                    paintSquare(this.x+(xdir*3)+xs[i], this.y+(ydir*3)+ys[i], this.squad, this.props.splashDamage);
                 }
             }
             else if(this.type === 'roller') {
@@ -173,27 +189,54 @@ function main() {
                     for(i = 1; i <= 4; i++) {
                         for(j = -1; j < 2; j++) {        
                             if(xdir) {
-                                paintSquare(this.x+(xdir*i), this.y+j, this.squad, attackProps.damage);
+                                paintSquare(this.x+(xdir*i), this.y+j, this.squad, this.props.damage);
                             }
                             else {
-                                paintSquare(this.x+j, this.y+(ydir*i), this.squad, attackProps.damage);
+                                paintSquare(this.x+j, this.y+(ydir*i), this.squad, this.props.damage);
                             }
                         }
                     }
                     this.setPosition(this.x + (3*xdir), this.y + (3*ydir));
                     this.canMove = false;
+                    this.attackType = '';
+                }
+                else {
+                    var shot;
+                    if(xdir) {
+                        xshots = [
+                                  [1,-1],[1,0],[1,1],
+                                  [2,-2],[2,-1],[2,0],[2,1],[2,2]
+                                 ];
+                        for(i = 0; i < 6; i++) {
+                            shot = Math.floor(Math.random() * 8);
+                            paintSquare(this.x+(xshots[shot][0]*xdir), this.y+xshots[shot][1], this.squad, this.props.flickGlobDamage);
+                        }
+                    }
+                    else {
+                        yshots = [
+                                  [-1,1],[0,1],[1,1],
+                                  [-2,2],[-1,2],[0,2],[1,2],[2,2]
+                                 ];
+                        for(i = 0; i < 6; i++) {
+                            shot = Math.floor(Math.random() * 8);
+                            paintSquare(this.x+yshots[shot][0], this.y+(yshots[shot][1]*ydir), this.squad, this.props.flickGlobDamage);
+                        }
+                    }
+                    
                 }
             }
             else if(this.type === 'charger') {
                 if(this.attackType === 'uncharged') {
                     this.attackType = 'charged';
                     this.moveBudget = 2;
+                    this.props.inkCost = this.props.maxInkCost;
                 }
                 else if(this.attackType === 'charged') {
                     this.attackType = 'uncharged';
                     this.moveBudget = 6;
-                    for(i = 0; i <= attackProps.maxRange; i++) {
-                        if(paintSquare(this.x+(xdir*i), this.y+(ydir*i), this.squad, attackProps.damageMax)) {
+                    this.props.inkCost = this.props.minInkCost;
+                    for(i = 0; i <= this.props.maxRange; i++) {
+                        if(paintSquare(this.x+(xdir*i), this.y+(ydir*i), this.squad, this.props.damageMax)) {
                             return;
                         }
                     }
@@ -207,6 +250,7 @@ function main() {
         setTileControl(x, y, squad);
         var victim = getSquidAtPosition(x, y);
         if(victim && victim.squad !== squad) {
+            victim.emerge();
             if(damageSquid(victim, damage)) {
                 console.log('squid killed');
                 for(i = -1; i <= 1; i++) {
@@ -322,15 +366,39 @@ function main() {
         squidInfoDiv.append($('<p>').html('Type: '+squid.type));
         squidInfoDiv.append($('<p>').html('Health: '+squid.health));
         squidInfoDiv.append($('<p>').html('Ink: '+squid.ink));
+        if(squid.submerged) 
+            squidInfoDiv.append($('<p>').html('Submerged'));
         if(squid.canMove)
             squidInfoDiv.append($('<p>').append($('<button>').html('Move').click(setMoveMode)));
-        if(squid.canAttack)
+        if(squid.canAttack && squid.ink >= squid.props.inkCost)
             squidInfoDiv.append($('<p>').append($('<button>').html('Attack').click(setAttackMode)));
-        if(squid.type === 'roller' && squid.canAttack && squid.canMove) {
+        if(squid.type === 'roller' && squid.canAttack && squid.canMove)
             squidInfoDiv.append($('<p>').append($('<button>').html('Roll').click(setRollMode)));
-        }
-        squidInfoDiv.append($('<p>').append($('<button>').html('Submerge').click(submerge)));
+        if(!squid.submerged && (squid.canAttack || squid.type === 'shooter' || squid.type === 'charger'))
+            squidInfoDiv.append($('<p>').append($('<button>').html('Submerge').click(submerge)));
+        if(squid.submerged)
+            squidInfoDiv.append($('<p>').append($('<button>').html('Emerge').click(emerge)));
         squidInfoDiv.css('background', rgbaStringFromSquadRGB(squid.squad, 0.5));
+    }
+    
+    function beginTurn(squad) {
+        for(var i = 0; i < squad.squids.length; i++) {
+            var tile = getTile(squad.squids[i].x, squad.squids[i].y);
+            if(tile.hasClass('noControl')) {}
+            else if(tile.hasClass(squad.name+'Control')) {
+                squad.squids[i].health += unSubmergedHeal;
+                squad.squids[i].ink += unSubmergedHeal;
+                if(squad.squids[i].submerged) {
+                    squad.squids[i].health += submergedHeal;
+                    squad.squids[i].ink += submergedHeal;
+                }
+            }
+            else {
+                squad.squids[i].health -= unSubmergedHeal;
+            }
+            if(squad.squids[i].health > 100) squad.squids[i].health = 100;
+            if(squad.squids[i].ink > 100) squad.squids[i].ink = 100;
+        }
     }
     
     function squadButtonClick(e) {
@@ -343,28 +411,56 @@ function main() {
                 displaySquidInfo(null);
                 activeSquid = null;
                 replenishSquadMoves(activeSquad);
+                beginTurn(activeSquad);
             }
         }
+    }
+    
+    function revealSquad(e) {
+        var squad = e.data;
+        for(var i = 0; i < squad.squids.length; i++) {
+            squad.squids[i].div.removeClass('hidden');
+        }
+        $('#hide'+squad.name).removeClass('hidden');
+        $('#reveal'+squad.name).addClass('hidden');
+    }
+    
+    function hideSquad(e) {
+        var squad = e.data;
+        for(var i = 0; i < squad.squids.length; i++) {
+            if(squad.squids[i].submerged) {
+                squad.squids[i].div.addClass('hidden');
+            }
+        }
+        $('#reveal'+squad.name).removeClass('hidden');
+        $('#hide'+squad.name).addClass('hidden');
     }
     
     function createSquadSwapButtons() {
         for(var i = 0; i < squads.length; i++) {
             $('#squadButtons').append(
                 $('<button>').html(squads[i].name).click(squadButtonClick)
+                ).append(
+                $('<button>').html('reveal '+squads[i].name).attr('id', 'reveal'+squads[i].name).addClass('hidden').click(squads[i], revealSquad)
+                ).append(
+                $('<button>').html('hide '+squads[i].name).attr('id', 'hide'+squads[i].name).click(squads[i], hideSquad)
             );
         }
     }
     
-    function getPossibleMovesR(x, y, moveBudget, moves, squadName) {
+    function getPossibleMovesR(squid, x, y, moveBudget, moves, squadName) {
         if(moveBudget < 0) { return; }
         if(!moves.includes(x+'-'+y) && getSquidAtPosition(x, y) === null) moves.push(x+'-'+y);
         var tile;
         for(var i = 0; i < 4; i ++) {
             tile = getTile(x+xs[i], y+ys[i]);
             if(tile.length > 0) {
-                if(tile.hasClass(squadName+'Control')) getPossibleMovesR(x+xs[i], y+ys[i], moveBudget-1, moves, squadName);
-                else if(tile.hasClass('noControl')) getPossibleMovesR(x+xs[i], y+ys[i], moveBudget-2, moves, squadName);
-                else getPossibleMovesR(x+xs[i], y+ys[i], moveBudget-4, moves, squadName);
+                if(tile.hasClass(squadName+'Control')) {
+                    if(squid.submerged) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-1, moves, squadName);
+                    else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, squadName);
+                }
+                else if(tile.hasClass('noControl')) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, squadName);
+                else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-4, moves, squadName);
             
             }
         }
@@ -375,7 +471,7 @@ function main() {
         
         moveBudget = squid.moveBudget;
         
-        getPossibleMovesR(squid.x, squid.y, moveBudget, moves, squid.squad.name);
+        getPossibleMovesR(squid, squid.x, squid.y, moveBudget, moves, squid.squad.name);
         
         for(var i = 0; i < moves.length; i++) {
             var coords = moves[i].split('-');
@@ -428,6 +524,11 @@ function main() {
         clearPossibleMoves();
         clearPossibleAttacks();
         activeSquid.submerge();
+    }
+    function emerge() {
+        clearPossibleMoves();
+        clearPossibleAttacks();
+        activeSquid.emerge();
     }
     function setRollMode() {
         clearPossibleMoves();
@@ -486,6 +587,11 @@ function main() {
         else if(mode === move) {
             if(getTile(coords[0], coords[1]).hasClass('possibleMove')) {
                 activeSquid.setPosition(coords[0], coords[1]);
+                if(!getTile(coords[0], coords[1]).hasClass(activeSquid.squad.name+'Control')) {
+                    if(activeSquid.submerged) {
+                        activeSquid.emerge();
+                    }
+                }
                 clearPossibleMoves();
                 activeSquid.canMove = false;
                 mode = selected;
