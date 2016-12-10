@@ -31,3 +31,9 @@ div#terrainInfo {
 .possibleMove {
     background-color: rgba(0,0,255,0.5) !important
 }
+.submerged {
+    opacity: 0.8;
+}
+.possibleAttack {
+    background-color: rgba(0,0,0,0.2) !important
+}
