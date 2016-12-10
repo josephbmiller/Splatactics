@@ -138,13 +138,13 @@ function main() {
         squid.setPosition = function(x, y) {
             this.x = x;
             this.y = y;
-            if(this.x >= gridSize) this.x = gridSize;
+            if(this.x >= gridSize) this.x = gridSize - 1;
             if(this.x < 0) this.x = 0;
-            if(this.y >= gridSize) this.y = gridSize;
+            if(this.y >= gridSize) this.y = gridSize - 1;
             if(this.y < 0) this.y = 0;
             if (this.div) {
-                this.div.css('left', x * tileSize + tileSize/2 - this.div.width()/2);
-                this.div.css('top', y * tileSize + tileSize/2 - this.div.height()/2);
+                this.div.css('left', this.x * tileSize + tileSize/2 - this.div.width()/2);
+                this.div.css('top', this.y * tileSize + tileSize/2 - this.div.height()/2);
             }
         };
         //submerges the squid. cancels charge if the squid is a charger, otherwise just adds the css property and updates the info pane
