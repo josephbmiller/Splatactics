@@ -1,51 +1,48 @@
 div#grid {
-    position: relative;
-    display: inline-block;
-}
-div#tiles {
-    position: absolute;
+  position: relative;
+  display: inline-block;
+  border: 1px solid black;
 }
 div.tile {
-    position: absolute;
-    border: 1px solid black;
-}
-div#squids {
-    position:absolute;
-    pointer-events: none;
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid black;
 }
 div.squid {
-    position: absolute;
+  pointer-events: none;
+}
+div.squidIcon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 div#info {
-    position: relative;
-    display: inline-block;
-    vertical-align: top;
+  position: relative;
+  display: inline-block;
+  vertical-align: top;
 }
 div#squidInfo {
-    vertical-align: top;
-    width: 120px;
-    padding-left: 10px;
-    padding-right: 10px;
-    display: inline-block;
+  vertical-align: top;
+  width: 120px;
+  padding-left: 10px;
+  padding-right: 10px;
+  display: inline-block;
 }
 div#weaponInfo {
-    vertical-align: top;
-    width: 200px;
-    display: inline-block;
+  vertical-align: top;
+  width: 200px;
+  display: inline-block;
 }
-div#squidInfo h4 {
-}
-div#terrainInfo {
+div#weaponInfo img {
+  width:200px;
 }
 .possibleMove {
-    background-color: rgba(0,0,255,0.5) !important
+  background-color: rgba(0,0,255,0.5) !important
 }
 .submerged {
-    opacity: 0.5;
+  opacity: 0.5;
 }
 .possibleAttack {
-    background-color: rgba(0,0,0,0.2) !important
-}
-.hidden {
-    display: none;
+  background-color: rgba(0,0,0,0.2) !important
 }
