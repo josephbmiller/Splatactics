@@ -6,10 +6,16 @@ function main() {
   var tileSize = 32;
   //Opacity of the color of the ink that covers the board
   var inkOpacity = 0.5;
-  //Amount a squid heals each turn when on it's own ink. Also the amount squids get damaged when on ink of a different color.
+  //Amount a squid heals each turn when on it's own ink.
   var unSubmergedHeal = 15;
-  //Bonus heal each turn for being submerged
+  //Amount a squid heals each turn when submerged on its own ink.
   var submergedHeal = 45;
+  //Amount of ink a squid regains when on its own ink
+  var unSubmergedInkRefill = 15;
+  //Amount of ink a squid regains when submerged on its own ink.
+  var submergedInkRefill = 45;
+  //Amount squids get damaged when on ink of a different color.
+  var enemyInkDamage = 20;
   //Squad whose turn it is currently
   var activeSquad;
   //Squid who is selected/active
@@ -25,11 +31,9 @@ function main() {
   const move = 2;
   const attack = 3;
   var mode = selecting;
-   
-  //Types of squids available
-  var squidTypes = [ 'shooter', 'blaster', 'roller', 'charger' ];
+  
   //Properties of each type's weapon. Not all properties are used.
-  var squidProps = {
+  const squidProps = {
     shooter: {
       range: 4,
       shotsPerRound: 3,
@@ -71,57 +75,74 @@ function main() {
     }
   };
   
-  //Default squads
-  var squads = [
-    {
-      name: 'alpha',
-      color: '#FF0000',
-      colorRGB: [255,0,0,0],
-      squids: [],
-      startingPositions: [[0,1],[1,0],[1,1],[0,0]]
-    },
-    {
-      name: 'bravo',
-      color: '#FF0000',
-      colorRGB: [0,255,0],
-      squids: [],
-      startingPositions: [[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
+  //Default spawn positions for each squad. These are used when squids are initially spawning
+  //Also used to find a unoccupied spot for a squid to respawn in
+  const defaultSpawnPositions = [
+    [[0,1],[1,0],[1,1],[0,0]],
+    [[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
+  ]
+
+  //Constructor function for squad objects.
+  //name - string - name of the squad. Mostly arbitrary, just used for html class names
+  //color - array[3] - RGB value of the squad's color. Should probably be unique among squads
+  function createSquad(name, color) {
+    var squad = {};
+    squad.name = name;
+    squad.colorRGB = color.slice();
+    //this will be filled with squids as they are created
+    squad.squids = [];
+    //push the squad onto the global squad array
+    squads.push(squad);
+    //remove the provided squid from the squad
+    squad.removeSquid = function(squid){
+      squid.squad.squids.splice(squid.squad.squids.indexOf(squid), 1);
+    };
+    //returns a string representing the rgba representation of a squad's rgb color array
+    //opacity - float - optional alpha value
+    squad.rgbaString = function(alpha){
+      if(alpha===undefined) alpha = 1;
+      return 'rgba('+this.colorRGB[0]+','+this.colorRGB[1]+','+this.colorRGB[2]+','+alpha+')';
     }
-  ];
-  //Set the active squad to the first one
-  activeSquad = squads[0];
-  //Update the turn indicator to signify which squad has the current turn
-  $('#turnIndicator').html(activeSquad.name+' squad\'s turn').css('color', rgbaStringFromSquadRGB(activeSquad, 1));
+    return squad;
+  }
   
   //Constructor function to create squid objects.
   //type - string corresponding to a type of squid.
   //squad - squad object to add the squid to
   function createSquid(type, squad) {
     var squid = {};
-    //the type of squid
+    //the type of squid (shooter, roller, etc.)
     squid.type = type;
-    //what squad it belongs to
+    //Add the squid to the provided squad
     squid.squad = squad;
-    //its x position
-    squid.x = 0;
-    //its y position
-    squid.y = 0;
-    //its current health, max 100
-    squid.health = 100;
-    //its current ink, max 100
-    squid.ink = 100;
-    //its default move budget, determines how far it can move under various conditions
-    squid.moveBudget = 6;
+    squad.squids.push(squid);
+    //give the squid a unique id based on its squad name and its position in the squad
+    squid.id = "squid"+squad.name+squad.squids.indexOf(squid);
+    //Initialize position to the 'unspawned' location
+    squid.x = -1;
+    squid.y = -1;
     //jquery object of div that displays the squid onscreen
     squid.div = null;
-    //Whether the squid can move this turn
-    squid.canMove = true;
-    //Whether the squid can attack this turn
-    squid.canAttack = true;
-    //Whether the squid is submerged
-    squid.submerged = false;
+    //rounds before respawn
+    squid.respawnTimer = 0;
+    //sets all of the values to be that of a freshly spawned squid
+    squid.fresh = function() {
+      //its current health, max 100.
+      squid.health = 100;
+      //its current ink, max 100.
+      squid.ink = 100;
+      //its default move budget, determines how far it can move under various conditions
+      squid.moveBudget = 6;
+      //Whether the squid can move this turn
+      squid.canMove = true;
+      //Whether the squid can attack this turn
+      squid.canAttack = true;
+      //Whether the squid is submerged
+      squid.submerged = false;
+    };
+    squid.fresh();
     //Properties of the squid's weapon
-    squid.props = squidProps[type];
+    squid.props = Object.assign({}, squidProps[type]);
     //attackType is a special property that only applies to rollers and chargers. sort of a hack.
     if(squid.type === 'charger') {
       squid.attackType = 'uncharged';
@@ -129,25 +150,52 @@ function main() {
     else {
       squid.attackType = '';
     }
-    //called at the beginning of the turn, resets the squid's resources
-    squid.replenishMoves = function() {
-      this.canMove = true;
-      this.canAttack = true;
-    };
-    //sets the position of the squid. used when moving and when rolling. Sets the position of the squid's div.
+    //Populates the squid info panel for the squid.
+    //This function checks the squid state and displays information and controls based on that state
+    squid.displayInfo = function() {
+      $('#info').show();
+      var squidInfoDiv = $('#squidInfo');
+      squidInfoDiv.html('');
+      var weaponInfoDiv = $('#weaponInfo');
+      weaponInfoDiv.html('');
+      if(!squid) return;
+      squidInfoDiv.append($('<h4>').html('Squid Stats'));
+      squidInfoDiv.append($('<p>').html('Type: '+this.type));
+      squidInfoDiv.append($('<p>').html('Health: '+this.health));
+      squidInfoDiv.append($('<p>').html('Ink: '+this.ink));
+      if(this.submerged)
+        squidInfoDiv.append($('<p>').html('Submerged'));
+      if(this.squad === activeSquad) {
+        if(this.canMove)
+          squidInfoDiv.append($('<p>').append($('<button>').html('Move').click(setMoveMode)));
+        if(this.canAttack && this.ink >= this.props.inkCost)
+          squidInfoDiv.append($('<p>').append($('<button>').html('Attack').click(setAttackMode)));
+        if(this.type === 'roller' && this.canAttack && this.canMove && this.ink >= this.props.inkCost)
+          squidInfoDiv.append($('<p>').append($('<button>').html('Roll').click(setRollMode)));
+        if(!this.submerged && getTileControl(this.x, this.y) === this.squad && (this.canAttack || this.type === 'shooter' || this.type === 'charger'))
+          squidInfoDiv.append($('<p>').append($('<button>').html('Submerge').click(submerge)));
+        if(this.submerged)
+          squidInfoDiv.append($('<p>').append($('<button>').html('Emerge').click(emerge)));
+      }
+      squidInfoDiv.css('background', this.squad.rgbaString(inkOpacity));
+      weaponInfoDiv.append($('<img>').attr('src', 'img/'+this.type+'.png'));
+      weaponInfoDiv.append(($('<p>').html(this.props.info)));
+    }
+    //sets the position of the squid. Sets the squid to be a child of the proper tile div
     squid.setPosition = function(x, y) {
       this.x = x;
       this.y = y;
+      //if the squid is here, it is dead or not spawned, that's ok.
+      if(x === -1 && y === -1) return;
       if(this.x >= gridSize) this.x = gridSize - 1;
       if(this.x < 0) this.x = 0;
       if(this.y >= gridSize) this.y = gridSize - 1;
       if(this.y < 0) this.y = 0;
       if (this.div) {
-        this.div.css('left', this.x * tileSize + tileSize/2 - this.div.width()/2);
-        this.div.css('top', this.y * tileSize + tileSize/2 - this.div.height()/2);
+        getTile(this.x, this.y).append(this.div);
       }
     };
-    //submerges the squid. cancels charge if the squid is a charger, otherwise just adds the css property and updates the info pane
+    //submerges the squid. cancels charge if the squid is a charger, otherwise just adds the class and updates the info pane
     squid.submerge = function() {
       this.submerged = true;
       if(this.type === 'charger') {
@@ -156,17 +204,18 @@ function main() {
         this.props.inkCost = this.props.minInkCost;
       }
       this.div.addClass('submerged');
-      displaySquidInfo(this);
+      this.displayInfo();
     };
-    //causes the squid to emerge from the ink. removes the hidden class, thus revealing enemy squids.
+    //causes the squid to emerge from the ink. Can occur voluntarily or involuntarily when the tile under a squid's feet is inked by the enemy squad.
     squid.emerge = function() {
       this.submerged = false;
       this.div.removeClass('submerged');
-      this.div.removeClass('hidden');
+      this.div.show();
       //only update info pane if it is the active squid (aka don't update if this is called by revealing an enemy squid)
-      if(this === activeSquid) displaySquidInfo(this);
+      if(this === activeSquid) this.displayInfo();
     };
     //Main attack function. Large switch block on the type of squid it is. Takes a square adjacent to the squid as input, squids can only fire in 4 directions
+    //TODO: split into subclasses
     squid.attack = function(xtar, ytar) {
       var xdir, ydir, i, xshots, yshots;
       //get directions for spray calculations. one will be +/- 1 and the other will be 0
@@ -182,8 +231,8 @@ function main() {
         //reset squid's move ability, allowing it to move/submerge after shooting
         this.canMove = true;
         //If there is a squid in the first 2 squares in front of us, all globs will hit it.
-        if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, this.props.damage*this.props.shotsPerRound)) { return; }
-        if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, this.props.damage*this.props.shotsPerRound)) { return; }
+        if(this.inkTile(this.x+(xdir), this.y+(ydir), this.props.damage*this.props.shotsPerRound)) { return; }
+        if(this.inkTile(this.x+(xdir*2), this.y+(ydir*2), this.props.damage*this.props.shotsPerRound)) { return; }
         //otherwise, we need to calculate the spray. We have 4 possible glob locations with a 3 round burst, so randomly choose the empty spot
         var emptySpace = Math.floor(Math.random() * 4);
         //separate processing for shots in the x direction vs shots in the y direction
@@ -199,8 +248,8 @@ function main() {
             //skip it if this came up as the empty space
             if(emptySpace === i) continue;
             //paint the spaces, reversing based on xdir if necessary. if the front shot hits, the back one won't.
-            if(paintSquare(this.x+xshots[i][0][0]*xdir, this.y+xshots[i][0][1], this.squad, this.props.damage)) { continue; }
-            paintSquare(this.x+xshots[i][1][0]*xdir, this.y+xshots[i][1][1], this.squad, this.props.damage);
+            if(this.inkTile(this.x+xshots[i][0][0]*xdir, this.y+xshots[i][0][1], this.props.damage)) { continue; }
+            this.inkTile(this.x+xshots[i][1][0]*xdir, this.y+xshots[i][1][1], this.props.damage);
           }
         }
         else {
@@ -212,8 +261,8 @@ function main() {
           ];
           for(i = 0; i < 4; i++) {
             if(emptySpace === i) continue;
-            if(paintSquare(this.x+yshots[i][0][0], this.y+yshots[i][0][1]*ydir, this.squad, this.props.damage)) { continue; }
-            paintSquare(this.x+yshots[i][1][0], this.y+yshots[i][1][1]*ydir, this.squad, this.props.damage);
+            if(this.inkTile(this.x+yshots[i][0][0], this.y+yshots[i][0][1]*ydir, this.props.damage)) { continue; }
+            this.inkTile(this.x+yshots[i][1][0], this.y+yshots[i][1][1]*ydir, this.props.damage);
           }
         }
       }
@@ -221,23 +270,23 @@ function main() {
         //Blaster explodes on the first target contacted, so we paint each square on the path using the direct damage property.
         //Then if something is hit, we apply the splash damage using xs and ys arrays for adjacency
         //First paint our square
-        paintSquare(this.x, this.y, this.squad, this.props.directDamage);
+        this.inkTile(this.x, this.y, this.props.directDamage);
         //This could be a loop based on the props blaster range
-        if(paintSquare(this.x+(xdir), this.y+(ydir), this.squad, this.props.directDamage)) {
+        if(this.inkTile(this.x+(xdir), this.y+(ydir), this.props.directDamage)) {
           for(i = 0; i < 4; i ++) {
-            paintSquare(this.x+(xdir)+xs[i], this.y+(ydir)+ys[i], this.squad, this.props.splashDamage);
+            this.inkTile(this.x+(xdir)+xs[i], this.y+(ydir)+ys[i], this.props.splashDamage);
           }
           return;
         }
-        if(paintSquare(this.x+(xdir*2), this.y+(ydir*2), this.squad, this.props.directDamage)) {
+        if(this.inkTile(this.x+(xdir*2), this.y+(ydir*2), this.props.directDamage)) {
           for(i = 0; i < 4; i ++) {
-            paintSquare(this.x+(xdir*2)+xs[i], this.y+(ydir*2)+ys[i], this.squad, this.props.splashDamage);
+            this.inkTile(this.x+(xdir*2)+xs[i], this.y+(ydir*2)+ys[i], this.props.splashDamage);
           }
           return;
         }
-        paintSquare(this.x+(xdir*3), this.y+(ydir*3), this.squad, this.props.directDamage);
+        this.inkTile(this.x+(xdir*3), this.y+(ydir*3), this.props.directDamage);
         for(i = 0; i < 4; i ++) {
-          paintSquare(this.x+(xdir*3)+xs[i], this.y+(ydir*3)+ys[i], this.squad, this.props.splashDamage);
+          this.inkTile(this.x+(xdir*3)+xs[i], this.y+(ydir*3)+ys[i], this.props.splashDamage);
         }
       }
       else if(this.type === 'roller') {
@@ -247,10 +296,10 @@ function main() {
           for(i = 1; i <= 4; i++) {
             for(j = -1; j < 2; j++) {
               if(xdir) {
-                paintSquare(this.x+(xdir*i), this.y+j, this.squad, this.props.damage);
+                this.inkTile(this.x+(xdir*i), this.y+j, this.props.damage);
               }
               else {
-                paintSquare(this.x+j, this.y+(ydir*i), this.squad, this.props.damage);
+                this.inkTile(this.x+j, this.y+(ydir*i), this.props.damage);
               }
             }
           }
@@ -273,7 +322,7 @@ function main() {
             //choose 6 random shots and paint them
             for(i = 0; i < 6; i++) {
               shot = Math.floor(Math.random() * 8);
-              paintSquare(this.x+(xshots[shot][0]*xdir), this.y+xshots[shot][1], this.squad, this.props.flickGlobDamage);
+              this.inkTile(this.x+(xshots[shot][0]*xdir), this.y+xshots[shot][1], this.props.flickGlobDamage);
             }
           }
           else {
@@ -283,7 +332,7 @@ function main() {
                  ];
             for(i = 0; i < 6; i++) {
               shot = Math.floor(Math.random() * 8);
-              paintSquare(this.x+yshots[shot][0], this.y+(yshots[shot][1]*ydir), this.squad, this.props.flickGlobDamage);
+              this.inkTile(this.x+yshots[shot][0], this.y+(yshots[shot][1]*ydir), this.props.flickGlobDamage);
             }
           }
           
@@ -302,119 +351,197 @@ function main() {
           this.moveBudget = 6;
           this.props.inkCost = this.props.minInkCost;
           for(i = 0; i <= this.props.maxRange; i++) {
-            if(paintSquare(this.x+(xdir*i), this.y+(ydir*i), this.squad, this.props.damageMax)) {
+            if(this.inkTile(this.x+(xdir*i), this.y+(ydir*i), this.props.damageMax)) {
               return;
             }
           }
         }
       }
     };
-    return squid;
-  }
-  
-  //Paints a square, applying damage to squids
-  //x - int - position
-  //y - int - position
-  //squad - squad object - ink type to paint with
-  //damage - int - damage to apply to any squids on the square
-  //returns - boolean - whether a squid was hit
-  function paintSquare(x, y, squad, damage) {
-    //set the ink color for the square
-    setTileControl(x, y, squad);
-    //find any squid on the square
-    var victim = getSquidAtPosition(x, y);
-    //if the squid isn't friendly, apply damage
-    if(victim && victim.squad !== squad) {
-      //reveal the squid
-      victim.emerge();
-      //damage the squid
-      damageSquid(victim, damage, squad);
-      return true;
+    //Inks a tile, applying damage to enemy squids
+    //damage - int - damage to be applied if the squid found is an enemy
+    //returns - boolean - whether an enemy squid was hit
+    squid.inkTile = function(x, y, damage) {
+      //set the controlling squad for the tile
+      setTileControl(x, y, this.squad);
+      //find any squid on the tile
+      var victim = getSquidAtPosition(x, y);
+      //if the squid isn't friendly, apply damage
+      if(victim && victim.squad !== this.squad) {
+        victim.damage(damage, this.squad);
+        return true;
+      }
+      return false;
     }
-    return false;
-  }
-  
-  //Damages a squid, removing it from the game if the damage is fatal
-  //squid - object - squid to damage
-  //damage - int - damage to apply
-  //attackingSquad - object - squad attacking
-  //returns - boolean - whether the squid was killed
-  function damageSquid(squid, damage, attackingSquad) {
-    //deduct the health points
-    squid.health -= damage;
-    if( squid.health <= 0 ) {
-      //squid killed! remove it's div
-      squid.div.remove();
+    //Causes this squid to take damage
+    //amount - int - amount of damage to take
+    //attackingSquad - squad - squad that is dealing the damage
+    squid.damage = function(amount, attackingSquad){
+      this.health -= amount;
+      if(this.health <= 0) {
+        //squid killed!
+        this.die(attackingSquad);
+        return true;
+      }
+      return false;
+    };
+    //heals the squid.
+    squid.heal = function(amount){
+      this.health += amount;
+      if(this.health > 100) this.health = 100;
+    };
+    //checks if the squid has the required amount of ink. If so, deducts the ink and returns true.
+    squid.spendInk = function(amount){
+      if(this.ink < amount) return false;
+      this.ink -= amount;
+      return true;
+    };
+    //refills the squid's ink tank
+    squid.refillInk = function(amount){
+      this.ink += amount;
+      if(this.ink > 100) this.ink = 100;
+    };
+    //Kills a squid.
+    //Sets its position at -1,-1 and inks the 8 adjacent squares but dealing no damage
+    squid.die = function(killingSquad){
       //killed squids splat an area around them, dealing no damage
       for(var i = -1; i <= 1; i++) {
         for(var j = -1; j <= 1; j++) {
-          setTileControl(squid.x+i, squid.y+j, attackingSquad);
+          setTileControl(this.x+i, this.y+j, killingSquad);
         }
       }
-      //remove the squid from it's squad
-      squid.squad.squids.splice(squid.squad.squids.indexOf(squid), 1);
+      $('#graveyard').append(this.div);
+      this.setPosition(-1, -1);
+      this.respawnTimer = 1;
       //if that was the last squid, trigger end game.
-      if(squid.squad.squids.length <= 0) {
-        var winningSquad = squads[(squads.indexOf(squid.squad)+1)%squads.length];
-        $('#main').html('<h1>'+winningSquad.name+' squad wins</h1>').css('color', rgbaStringFromSquadRGB(winningSquad, 1));
-        $('#controls').html($('<button>').html('Reset').click(function(){
-          window.location.href='index.html';
-        }));
+      //TODO: different wincons
+      if(this.squad.squids.length <= 0) {
+        gameOver(killingSquad);
       }
-      return true;
-    }
-    return false;
-  }
-
-  //Initialize a squad with squids, one of each type
-  function initSquids(squad) {
-    squad.squids.push(createSquid('shooter', squad));
-    squad.squids.push(createSquid('blaster', squad));
-    squad.squids.push(createSquid('roller', squad));
-    squad.squids.push(createSquid('charger', squad));
-  }
-  
-  //returns a string representing the rgba representation of a squad's rgb color array
-  function rgbaStringFromSquadRGB(squad, opacity) {
-    return 'rgba('+squad.colorRGB[0]+','+squad.colorRGB[1]+','+squad.colorRGB[2]+','+opacity+')';
-  }
-
-  //Create the divs for the squids of a squad and set the squid's div property
-  function createSquidDivs(squad) {
-    squidsDiv = $('#squids');
-    for(var i = 0; i < squad.squids.length; i++) {
+    };
+    //Called for all squids on a squad when their turn begins
+    //heals squids on friendly ink and refills their ink tanks
+    //damages squids on enemy ink
+    //reveals all friendly submerged squids so the player can see them
+    //also resets the canMove and canAttack values
+    squid.beginTurn = function(){
+      if(this.health <= 0) {
+        if(this.respawnTimer > 0) this.respawnTimer--;
+        else this.spawn();
+      }
+      var controllingSquad = getTileControl(this.x, this.y);
+      if(controllingSquad === this.squad) {
+        if(this.submerged) {
+          this.heal(submergedHeal);
+          this.refillInk(submergedInkRefill);
+        }
+        else {
+          this.heal(unSubmergedHeal);
+          this.refillInk(unSubmergedInkRefill);
+        }
+      }
+      else if(controllingSquad) {
+        this.damage(enemyInkDamage, controllingSquad);
+      }
+      this.canMove = true;
+      this.canAttack = true;
+      this.div.show();
+    };
+    //Called for all squids of a squad when their turn ends
+    //Hides any submerged squids so the enemy player cannot see them
+    squid.endTurn = function(){
+      if(this.submerged) this.div.hide();
+    };
+    //Spawns a squid.
+    //Finds an unoccupied location to spawn the squid, sets its position there and reveals the div
+    //Returns the location the squid spawned at, or null if a position was not found
+    squid.spawn = function(){
+      var spawnPosition = null;
+      defaultSpawnPositions[squads.indexOf(this.squad)].forEach(function(position){
+        if(!getSquidAtPosition(position[0], position[1])) spawnPosition = position.slice();
+      });
+      if(spawnPosition) {
+        this.setPosition(spawnPosition[0], spawnPosition[1]);
+        this.div.show();
+        setTileControl(this.x, this.y, this.squad);
+        this.fresh();
+      }
+      return spawnPosition;
+    };
+    //Creates the div object to display a squid.
+    //Consists of a parent div.squid that gets added to a tile div
+    //parent div.squid contains all of the other parts of the squid display.
+    squid.createDiv = function(){
       var div = $('<div>');
-      div.attr('id', 'squid'+squad.name+i);
+      div.hide();
+      div.attr('id', this.id);
       div.addClass('squid');
-      div.css('font-size', tileSize);
-      div.css('color', rgbaStringFromSquadRGB(squad, 1));
-      div.css('text-shadow', '-1px 0 black, 0 1px black, 1px 0 black, 0 -1px black');
-      div.html(squad.squids[i].type.substring(0,1).toUpperCase());
-      squad.squids[i].div = div;
-      squidsDiv.append(div);
+      var iconDiv = $('<div>');
+      iconDiv.addClass('squidIcon');
+      iconDiv.css('font-size', tileSize);
+      iconDiv.css('color', this.squad.rgbaString());
+      iconDiv.css('text-shadow', '-1px 0 black, 0 1px black, 1px 0 black, 0 -1px black');
+      iconDiv.html(this.type.substring(0,1).toUpperCase());
+      div.append(iconDiv);
+      this.div = div;
+    };
+    //Removes the squid from its squad and removes its div from the dom
+    squid.cleanup = function(){
+      this.squad.removeSquid(squid);
+      this.div.remove();
+    };
+    //Create the squid's div
+    squid.createDiv();
+    //Try and spawn the squid, if we could not find a spot, bail and clean up the squid
+    if(!squid.spawn()) {
+      squid.cleanup();
+      return null;
+    }
+    return squid;
+  }
+  
+  //called when the game is over. Displays a message and a reset button.
+  function gameOver(winningSquad) {
+    $('#main').html('<h1>'+winningSquad.name+' squad wins</h1>').css('color', winningSquad.rgbaString());
+    $('#controls').html($('<button>').html('Reset').click(function(){
+      window.location.href='index.html';
+    }));
+  }
+  
+
+  //Sets a tile to be under the control of a given squad.
+  //if squad is not supplied, set the tile to be uncontrolled
+  //reveals a squid on the tile if they are not a member of the supplied squad
+  function setTileControl(x, y, squad) {
+    var tile = getTile(x, y);
+    if(!tile.length) { return; }
+    //remove any existing "___Control" classes
+    Array.from(tile.attr('class').matchAll(/\b\w+Control\b/g)).forEach(function(match){
+      tile.removeClass(match[0]);
+    });
+    //if we weren't supplied a squad, be content to remove the background color
+    if(!squad) {
+      tile.css('background-color', '');
+    }
+    //otherwise we need to add the class, set the background color, and reveal any enemy squids
+    else {
+      tile.addClass(squad.name+'Control');
+      tile.css('background-color', squad.rgbaString(inkOpacity));
+      var squid = getSquidAtPosition(x, y);
+      if(squid && squid.squad !== squad) squid.emerge();
     }
   }
   
-  //Sets a tile to be under the control of a given squad
-  function setTileControl(x, y, squad) {
-    tile = getTile(x, y);
-    if(tile.length === 0 || tile.hasClass(squad.name+'Control')) return;
-    for(var i = 0; i < squads.length; i++) {
-      if(tile.hasClass(squads[i].name+'Control')) {
-        tile.removeClass(squads[i].name+'Control');
-      }
-    }
-    if(tile.hasClass('noControl')) tile.removeClass('noControl');
-    tile.addClass(squad.name+'Control');
-    tile.css('background-color', rgbaStringFromSquadRGB(squad, inkOpacity));
-  }
-
-  //set initial squid positions from the squad starting positions
-  function setSquidStartingPositions(squad) {
-    for(var i = 0; i < squad.squids.length; i++) {
-      squad.squids[i].setPosition(squad.startingPositions[i][0], squad.startingPositions[i][1]);
-      setTileControl(squad.startingPositions[i][0], squad.startingPositions[i][1], squad);
-    }
+  //return what squad, if any, controls the tile in question
+  //returns undefined otherwise
+  //returns null if we couldnt find the tile
+  function getTileControl(x, y) {
+    var tile = getTile(x, y);
+    if(!tile.length) { return null; }
+    var match = tile.attr('class').match(/\b(\w+)Control\b/);
+    if(!match) return undefined;
+    var controllingSquadName = match[1];
+    return squads.find(function(squad){return squad.name == controllingSquadName});
   }
   
   //returns the id property for a tile at a location
@@ -422,142 +549,89 @@ function main() {
     return 'tile'+x+'-'+y;
   }
   
-  //Create the divs that make up the grid
-  function initGrid() {
-    var mainDiv = $('#tiles');
-    for(var i = 0; i < gridSize; i++) {
-      for(var j = 0; j < gridSize; j++) {
-        mainDiv.append($('<div>').attr('id', tileId(i,j)).addClass('tile').addClass('noControl').width(tileSize-2).height(tileSize-2).css('left', i*tileSize).css('top', j*tileSize));
-      }
-    }
-    $('#grid').width(gridSize*tileSize).height(gridSize*tileSize);
-  }
-  
   //returns the jquery object for a tile at location
   function getTile(x, y) {
     return $('#'+tileId(x,y));
   }
+  
+  //Create the divs that make up the grid
+  function initGrid() {
+    var mainDiv = $('#grid');
+    for(var i = 0; i < gridSize; i++) {
+      for(var j = 0; j < gridSize; j++) {
+        mainDiv.append($('<div>')
+          .attr('id', tileId(i,j))
+          .addClass('tile')
+          .width(tileSize)
+          .height(tileSize)
+          .css('left', i*tileSize)
+          .css('top', j*tileSize));
+      }
+    }
+    mainDiv.append($('<div>').attr('id', 'graveyard').hide());
+    $('#grid').width(gridSize*tileSize).height(gridSize*tileSize);
+  }
 
   //checks if there is a squid at the specified location and returns it, returns null otherwise
   function getSquidAtPosition(x, y) {
-    for(var i = 0; i < squads.length; i++) {
-      for(var j = 0; j < squads[i].squids.length; j++) {
-        if(squads[i].squids[j].x == x && squads[i].squids[j].y == y) {
-          return squads[i].squids[j];
-        }
-      }
-    }
-    return null;
+    var foundSquid = null;
+    squads.forEach(function(squad){
+      squad.squids.forEach(function(squid){
+        if(squid.x === x && squid.y === y) { foundSquid = squid; }
+      });
+    });
+    return foundSquid;
   }
   
-  //Populates the squid info panel for the specified squid. This panel also controls what actions a squid can perform
-  //This function checks the squid state and displays information and controls based on that state
-  function displaySquidInfo(squid) {
-    var squidInfoDiv = $('#squidInfo');
-    squidInfoDiv.html('');
-    var weaponInfoDiv = $('#weaponInfo');
-    weaponInfoDiv.html('');
-    if(!squid) return;
-    squidInfoDiv.append($('<h4>').html('Squid Stats'));
-    squidInfoDiv.append($('<p>').html('Type: '+squid.type));
-    squidInfoDiv.append($('<p>').html('Health: '+squid.health));
-    squidInfoDiv.append($('<p>').html('Ink: '+squid.ink));
-    if(squid.submerged)
-      squidInfoDiv.append($('<p>').html('Submerged'));
-    if(squid.squad === activeSquad) {
-      if(squid.canMove)
-        squidInfoDiv.append($('<p>').append($('<button>').html('Move').click(setMoveMode)));
-      if(squid.canAttack && squid.ink >= squid.props.inkCost)
-        squidInfoDiv.append($('<p>').append($('<button>').html('Attack').click(setAttackMode)));
-      if(squid.type === 'roller' && squid.canAttack && squid.canMove && squid.ink >= squid.props.inkCost)
-        squidInfoDiv.append($('<p>').append($('<button>').html('Roll').click(setRollMode)));
-      if(!squid.submerged && (squid.canAttack || squid.type === 'shooter' || squid.type === 'charger'))
-        squidInfoDiv.append($('<p>').append($('<button>').html('Submerge').click(submerge)));
-      if(squid.submerged)
-        squidInfoDiv.append($('<p>').append($('<button>').html('Emerge').click(emerge)));
-    }
-    squidInfoDiv.css('background', rgbaStringFromSquadRGB(squid.squad, 0.5));
-    weaponInfoDiv.append($('<img>').attr('src', 'img/'+squid.type+'.png').width(200));
-    weaponInfoDiv.append(($('<p>').html(squid.props.info)));
-  }
   
   //Performs actions that happen at the beginning of each turn. Most notably, applying healing or damage based on ink and refilling ink canisters
   function beginTurn(squad) {
-    for(var i = 0; i < squad.squids.length; i++) {
-      var tile = getTile(squad.squids[i].x, squad.squids[i].y);
-      if(tile.hasClass('noControl')) {}
-      else if(tile.hasClass(squad.name+'Control')) {
-        squad.squids[i].health += unSubmergedHeal;
-        squad.squids[i].ink += unSubmergedHeal;
-        if(squad.squids[i].submerged) {
-          squad.squids[i].health += submergedHeal;
-          squad.squids[i].ink += submergedHeal;
-        }
-      }
-      else {
-        for (var j = 0; j < squads.length; j++) {
-          if(tile.hasClass(squads[j].name+'Control')) {
-            damageSquid(squad.squids[j], unSubmergedHeal, squads[j]);
-          }
-        }
-      }
-      if(squad.squids[i].health > 100) squad.squids[i].health = 100;
-      if(squad.squids[i].ink > 100) squad.squids[i].ink = 100;
-    }
+    squad.squids.forEach(function(squid){squid.beginTurn();});
+    mode = selecting;
+  }
+  
+  function endTurn(squad) {
+    squad.squids.forEach(function(squid){squid.endTurn()});
+    clearPossibleMoves();
+    clearPossibleAttacks();
+    hideInfo();
+    activeSquid = null;
   }
   
   //Function called when the end turn button is clicked.
   //Performs all actions to switch control to the other squad, including hiding squids and replenishing moves, etc.
   function turnButtonClick(e) {
-    clearPossibleMoves();
-    clearPossibleAttacks();
-    hideSquad(activeSquad);
+    endTurn(activeSquad);
     activeSquad = squads[(squads.indexOf(activeSquad)+1)%squads.length];
-    $('#turnIndicator').html(activeSquad.name+' squad\'s turn').css('color', rgbaStringFromSquadRGB(activeSquad, 1));
-    revealSquad(activeSquad);
-    mode = selecting;
-    displaySquidInfo(null);
-    activeSquid = null;
-    replenishSquadMoves(activeSquad);
+    $('#turnIndicator').html(activeSquad.name+' squad\'s turn').css('color', activeSquad.rgbaString());
     beginTurn(activeSquad);
   }
   $('#turnButton').click(turnButtonClick);
   
-  //reveals submerged squids for a squad
-  function revealSquad(squad) {
-    for(var i = 0; i < squad.squids.length; i++) {
-      squad.squids[i].div.removeClass('hidden');
-    }
-    $('#hide'+squad.name).removeClass('hidden');
-    $('#reveal'+squad.name).addClass('hidden');
+  //hides the info pane
+  function hideInfo() {
+    $('#info').hide();
   }
-  
-  //hides submerged squids for a squad
-  function hideSquad(squad) {
-    for(var i = 0; i < squad.squids.length; i++) {
-      if(squad.squids[i].submerged) {
-        squad.squids[i].div.addClass('hidden');
-      }
-    }
-    $('#reveal'+squad.name).removeClass('hidden');
-    $('#hide'+squad.name).addClass('hidden');
-  }
-  
-  //recursive function that computes all possible moves from the given point, decrementing the movebudget as it passes through terrain
-  function getPossibleMovesR(squid, x, y, moveBudget, moves, squadName) {
+
+  //recursive function that computes all possible moves from the given point
+  //decrements the movebudget as it passes through tiles
+  //adds available tiles to the 'moves' array
+  function getPossibleMovesR(squid, x, y, moveBudget, moves) {
     if(moveBudget < 0) { return; }
     if(!moves.includes(x+'-'+y) && getSquidAtPosition(x, y) === null) moves.push(x+'-'+y);
     var tile;
     for(var i = 0; i < 4; i ++) {
-      tile = getTile(x+xs[i], y+ys[i]);
-      if(tile.length > 0) {
-        if(tile.hasClass(squadName+'Control')) {
-          if(squid.submerged) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-1, moves, squadName);
-          else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, squadName);
-        }
-        else if(tile.hasClass('noControl')) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, squadName);
-        else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-4, moves, squadName);
-      
+      controller = getTileControl(x+xs[i], y+ys[i]);
+      if(controller === null) {} //invalid tile
+      else if(controller === undefined) { //uncontrolled tile
+        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves);
+      }
+      else if(controller === squid.squad) {//friendly tile
+        if(squid.submerged) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-1, moves);
+        else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves);
+      }
+      else { //enemy tile
+        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-4, moves);
       }
     }
   }
@@ -565,12 +639,13 @@ function main() {
   //Function that calls the recursive function to display all the possible moves.
   //Adds a class that colors tiles to represent that they can be moved to
   function displayPossibleMoves(squid) {
+    //array that collects all available tiles to move to
     var moves = [];
-    
+    //copy default movebudget, will decrement this as we traverse
     moveBudget = squid.moveBudget;
-    
-    getPossibleMovesR(squid, squid.x, squid.y, moveBudget, moves, squid.squad.name);
-    
+    //call the helper
+    getPossibleMovesR(squid, squid.x, squid.y, moveBudget, moves);
+    //add the class to all of the available tiles
     for(var i = 0; i < moves.length; i++) {
       var coords = moves[i].split('-');
       getTile(coords[0], coords[1]).addClass('possibleMove');
@@ -600,13 +675,6 @@ function main() {
       for(var j = 0; j < gridSize; j++) {
         getTile(i, j).removeClass('possibleAttack');
       }
-    }
-  }
-  
-  //Replenishes all moves for the squids of a squad
-  function replenishSquadMoves(squad) {
-    for(var i = 0; i < squad.squids.length; i++) {
-      squad.squids[i].replenishMoves();
     }
   }
   
@@ -648,15 +716,23 @@ function main() {
 
   //Call all initialization functions
   initGrid();
-  for(var i = 0; i < squads.length; i++) {
-    initSquids(squads[i]);
-  }
-  for(i = 0; i < squads.length; i++) {
-    createSquidDivs(squads[i]);
-  }
-  for(i = 0; i < squads.length; i++) {
-    setSquidStartingPositions(squads[i]);
-  }
+  
+  squads = [];
+  createSquad('alpha', [255,0,0]);
+  createSquid('shooter', squads[0]);
+  createSquid('blaster', squads[0]);
+  createSquid('roller', squads[0]);
+  createSquid('charger', squads[0]);
+  createSquad('bravo', [0,255,0]);
+  createSquid('shooter', squads[1]);
+  createSquid('blaster', squads[1]);
+  createSquid('roller', squads[1]);
+  createSquid('charger', squads[1]);
+  
+    //Set the active squad to the first one
+  activeSquad = squads[0];
+  //Update the turn indicator to signify which squad has the current turn
+  $('#turnIndicator').html(activeSquad.name+' squad\'s turn').css('color', activeSquad.rgbaString());
   
   //Click function for main div. This is where the action happens.
   var mainDiv = $('#grid');
@@ -676,13 +752,13 @@ function main() {
     if(mode === selecting) {
       //and there is a squid, set it to active
       if(squid) {
-        displaySquidInfo(squid);
+        squid.displayInfo();
         activeSquid = squid;
         mode = selected;
       }
       //otherwise, deselect any selected squid
       else {
-        displaySquidInfo(null);
+        hideInfo();
         activeSquid = null;
       }
     }
@@ -690,12 +766,12 @@ function main() {
     else if(mode === selected) {
       //and we click on a squid, select that one
       if(squid) {
-        displaySquidInfo(squid);
+        squid.displayInfo();
         activeSquid = squid;
       }
       //otherwise deselect the selected squid
       else {
-        displaySquidInfo(null);
+        hideInfo();
         activeSquid = null;
         mode = selecting;
       }
@@ -719,7 +795,7 @@ function main() {
         //go back to selected mode
         mode = selected;
         //refresh the squidinfo window
-        displaySquidInfo(activeSquid);
+        activeSquid.displayInfo();
       }
       //otherwise, it is not a valid move, so behave like select
       else if(squid) {
@@ -730,12 +806,12 @@ function main() {
         //go to selected mode
         mode = selected;
         //refresh the squidinfo window
-        displaySquidInfo(activeSquid);
+        activeSquid.displayInfo();
       }
       //otherwise deselect
       else {
         clearPossibleMoves();
-        displaySquidInfo(null);
+        hideInfo();
         activeSquid = null;
         mode = selecting;
       }
@@ -751,21 +827,21 @@ function main() {
         clearPossibleAttacks();
         activeSquid.canAttack = false;
         mode = selected;
-        displaySquidInfo(activeSquid);
+        activeSquid.displayInfo();
       }
       //otherwise, behave like select/deselect
       else if(squid) {
-        displaySquidInfo(squid);
+        squid.displayInfo();
         activeSquid = squid;
         clearPossibleMoves();
         clearPossibleAttacks();
         mode = selected;
-        displaySquidInfo(activeSquid);
+        activeSquid.displayInfo();
       }
       else {
         clearPossibleMoves();
         clearPossibleAttacks();
-        displaySquidInfo(null);
+        hideInfo();
         activeSquid = null;
         mode = selecting;
       }
