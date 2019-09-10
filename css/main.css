@@ -52,12 +52,15 @@ div.floatingText {
 }
 div.heal {
   color: green;
+  display: inline;
 }
 div.damage {
   color: red;
+  display: inline;
 }
 div.inkRefill {
   color: blue;
+  display: inline;
 }
 @keyframes floatingTextKF {
   0% {
@@ -89,11 +92,14 @@ div#weaponInfo img {
   width:200px;
 }
 .possibleMove {
-  background-color: rgba(0,0,255,0.5) !important
+  background-color: rgba(0,0,255,0.5) !important;
+}
+.hoverMove {
+  background-color: rgba(0,0,255,0.75) !important;
 }
 .submerged {
   opacity: 0.5;
 }
 .possibleAttack {
-  background-color: rgba(0,0,0,0.2) !important
+  background-color: rgba(0,0,0,0.2) !important;
 }
