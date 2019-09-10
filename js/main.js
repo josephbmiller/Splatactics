@@ -32,6 +32,10 @@ function main() {
   const attack = 3;
   var mode = selecting;
   
+  //object containing potential tiles squids can move to and the paths to those tiles
+  //repopulated every time the move command is selected on a squid
+  var moves = {}
+  
   //Properties of each type's weapon. Not all properties are used.
   const squidProps = {
     shooter: {
@@ -601,17 +605,39 @@ function main() {
     var mainDiv = $('#grid');
     for(var i = 0; i < gridSize; i++) {
       for(var j = 0; j < gridSize; j++) {
-        mainDiv.append($('<div>')
+        var tile = $('<div>')
           .attr('id', tileId(i,j))
           .addClass('tile')
           .width(tileSize)
           .height(tileSize)
           .css('left', i*tileSize)
-          .css('top', j*tileSize));
+          .css('top', j*tileSize)
+          .mouseenter(tileHover)
+          .mouseleave(tileUnhover);
+        mainDiv.append(tile);
       }
     }
     mainDiv.append($('<div>').attr('id', 'graveyard').hide());
     $('#grid').width(gridSize*tileSize).height(gridSize*tileSize);
+  }
+  
+  function tileHover(e) {
+    var tile = $(this);
+    var path = moves[tile.attr('id')];
+    if(path) {
+      path.forEach(function(tileId) {
+        $('#'+tileId).addClass('hoverMove');
+      });
+    }
+  }
+  
+  function tileUnhover(e) {
+    var tile = $(this);
+    if(moves[tile.attr('id')]) {
+      moves[tile.attr('id')].forEach(function(tileId) {
+        $('#'+tileId).removeClass('hoverMove');
+      });
+    }
   }
   
   function createFloatingText(x, y, div) {
@@ -668,22 +694,23 @@ function main() {
   //recursive function that computes all possible moves from the given point
   //decrements the movebudget as it passes through tiles
   //adds available tiles to the 'moves' array
-  function getPossibleMovesR(squid, x, y, moveBudget, moves) {
+  function getPossibleMovesR(squid, x, y, moveBudget, moves, path) {
     if(moveBudget < 0) { return; }
-    if(!moves.includes(x+'-'+y) && getSquidAtPosition(x, y) === null) moves.push(x+'-'+y);
-    var tile;
+    path.push(tileId(x, y));
+    if(!moves[tileId(x, y)] && getSquidAtPosition(x, y) === null ||
+        moves[tileId(x, y)] && moves[tileId(x,y)].length > path.length) moves[tileId(x, y)] = path;
     for(var i = 0; i < 4; i ++) {
       controller = getTileControl(x+xs[i], y+ys[i]);
       if(controller === null) {} //invalid tile
       else if(controller === undefined) { //uncontrolled tile
-        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves);
+        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, path.slice());
       }
       else if(controller === squid.squad) {//friendly tile
-        if(squid.submerged) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-1, moves);
-        else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves);
+        if(squid.submerged) getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-1, moves, path.slice());
+        else getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-2, moves, path.slice());
       }
       else { //enemy tile
-        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-4, moves);
+        getPossibleMovesR(squid, x+xs[i], y+ys[i], moveBudget-4, moves, path.slice());
       }
     }
   }
@@ -692,16 +719,15 @@ function main() {
   //Adds a class that colors tiles to represent that they can be moved to
   function displayPossibleMoves(squid) {
     //array that collects all available tiles to move to
-    var moves = [];
+    moves = {};
     //copy default movebudget, will decrement this as we traverse
     moveBudget = squid.moveBudget;
     //call the helper
-    getPossibleMovesR(squid, squid.x, squid.y, moveBudget, moves);
+    getPossibleMovesR(squid, squid.x, squid.y, moveBudget, moves, []);
     //add the class to all of the available tiles
-    for(var i = 0; i < moves.length; i++) {
-      var coords = moves[i].split('-');
-      getTile(coords[0], coords[1]).addClass('possibleMove');
-    }
+    Object.keys(moves).forEach(function(tileId){
+      $('#'+tileId).addClass('possibleMove');
+    });
   }
   
   //Clears all tiles of the possibleMove class
@@ -709,8 +735,10 @@ function main() {
     for(var i = 0; i < gridSize; i++) {
       for(var j = 0; j < gridSize; j++) {
         getTile(i, j).removeClass('possibleMove');
+        getTile(i, j).removeClass('hoverMove');
       }
     }
+    moves = {};
   }
   
   //Displays available attack directions for the active squid
