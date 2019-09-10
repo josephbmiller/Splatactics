@@ -78,8 +78,10 @@ function main() {
   //Default spawn positions for each squad. These are used when squids are initially spawning
   //Also used to find a unoccupied spot for a squid to respawn in
   const defaultSpawnPositions = [
-    [[0,1],[1,0],[1,1],[0,0]],
-    [[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
+    //[[0,1],[1,0],[1,1],[0,0]],
+    //[[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
+    [[1,0],[5,5],[1,1],[0,0]],
+    [[gridSize-2,gridSize-1],[6,6],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
   ]
 
   //Constructor function for squad objects.
@@ -222,7 +224,7 @@ function main() {
       xdir = xtar - this.x;
       ydir = ytar - this.y;
       //deduct the cost of this move from the ink tank
-      this.ink -= this.props.inkCost;
+      this.spendInk(this.props.inkCost);
       //if the squid is submerged, pop it out. squids cant fire if they are submerged.
       if(this.submerged) {
         this.emerge();
@@ -377,8 +379,8 @@ function main() {
     //amount - int - amount of damage to take
     //attackingSquad - squad - squad that is dealing the damage
     squid.damage = function(amount, attackingSquad){
-      this.health -= amount;
-      if(this.health <= 0) {
+      this.modifyResources(-1*amount, 0);
+      if(this.health === 0) {
         //squid killed!
         this.die(attackingSquad);
         return true;
@@ -387,20 +389,21 @@ function main() {
     };
     //heals the squid.
     squid.heal = function(amount){
-      this.health += amount;
-      if(this.health > 100) this.health = 100;
+      this.modifyResources(amount, 0);
     };
     //checks if the squid has the required amount of ink. If so, deducts the ink and returns true.
     squid.spendInk = function(amount){
       if(this.ink < amount) return false;
-      this.ink -= amount;
+      this.modifyResources(0, -1*amount);
       return true;
     };
     //refills the squid's ink tank
     squid.refillInk = function(amount){
-      this.ink += amount;
-      if(this.ink > 100) this.ink = 100;
+      this.modifyResources(0, amount)
     };
+    squid.healAndRefillInk = function(health, ink){
+      this.modifyResources(health, ink);
+    }
     //Kills a squid.
     //Sets its position at -1,-1 and inks the 8 adjacent squares but dealing no damage
     squid.die = function(killingSquad){
@@ -410,6 +413,10 @@ function main() {
           setTileControl(this.x+i, this.y+j, killingSquad);
         }
       }
+      var splatDiv = $('<div>');
+      splatDiv.html('SPLAT');
+      splatDiv.addClass('damage');
+      createFloatingText(this.x, this.y, splatDiv)
       $('#graveyard').append(this.div);
       this.setPosition(-1, -1);
       this.respawnTimer = 1;
@@ -432,12 +439,10 @@ function main() {
       var controllingSquad = getTileControl(this.x, this.y);
       if(controllingSquad === this.squad) {
         if(this.submerged) {
-          this.heal(submergedHeal);
-          this.refillInk(submergedInkRefill);
+          this.healAndRefillInk(submergedHeal, submergedInkRefill);
         }
         else {
-          this.heal(unSubmergedHeal);
-          this.refillInk(unSubmergedInkRefill);
+          this.healAndRefillInk(unSubmergedHeal, unSubmergedInkRefill);
         }
       }
       else if(controllingSquad) {
@@ -480,10 +485,49 @@ function main() {
       iconDiv.addClass('squidIcon');
       iconDiv.css('font-size', tileSize);
       iconDiv.css('color', this.squad.rgbaString());
-      iconDiv.css('text-shadow', '-1px 0 black, 0 1px black, 1px 0 black, 0 -1px black');
       iconDiv.html(this.type.substring(0,1).toUpperCase());
       div.append(iconDiv);
+      var healthDiv = $('<div>');
+      healthDiv.addClass('health resource');
+      div.append(healthDiv);
+      var inkDiv = $('<div>');
+      inkDiv.addClass('ink resource');
+      div.append(inkDiv);
       this.div = div;
+      this.resizeResourceBars();
+    };
+    squid.modifyResources = function(health, ink) {
+      this.health += health;
+      if(this.health < 0) this.health = 0;
+      if(this.health > 100) this.health = 100;
+      this.ink += ink;
+      if(this.ink < 0) this.ink = 0;
+      if(this.ink > 100) this.ink = 100;
+      var floatingTextDiv = $('<div>');
+      if(health > 0) {
+        var healthDiv = $('<div>');
+        healthDiv.addClass('heal');
+        healthDiv.html(health);
+        floatingTextDiv.append(healthDiv);
+      }
+      else if(health < 0) {
+        var healthDiv = $('<div>');
+        healthDiv.addClass('damage');
+        healthDiv.html(health);
+        floatingTextDiv.append(healthDiv);
+      }
+      if(ink > 0) {
+        var inkDiv = $('<div>');
+        inkDiv.addClass('inkRefill');
+        inkDiv.html(ink);
+        floatingTextDiv.append(inkDiv);
+      }
+      createFloatingText(this.x, this.y, floatingTextDiv);
+      this.resizeResourceBars();
+    };
+    squid.resizeResourceBars = function() {
+      squid.div.find('.health').height(squid.health+'%');
+      squid.div.find('.ink').height(squid.ink+'%');
     };
     //Removes the squid from its squad and removes its div from the dom
     squid.cleanup = function(){
@@ -570,6 +614,16 @@ function main() {
     }
     mainDiv.append($('<div>').attr('id', 'graveyard').hide());
     $('#grid').width(gridSize*tileSize).height(gridSize*tileSize);
+  }
+  
+  function createFloatingText(x, y, div) {
+    div.addClass('floatingText');
+    var tile = getTile(x, y);
+    var anchor = tile.find('.floatingTextAnchor');
+    if(!anchor.length) tile.append($('<div>').addClass('floatingTextAnchor'));
+    anchor = tile.find('.floatingTextAnchor');
+    anchor.find('.floatingText').remove();
+    anchor.append(div);
   }
 
   //checks if there is a squid at the specified location and returns it, returns null otherwise
