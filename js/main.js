@@ -78,10 +78,8 @@ function main() {
   //Default spawn positions for each squad. These are used when squids are initially spawning
   //Also used to find a unoccupied spot for a squid to respawn in
   const defaultSpawnPositions = [
-    //[[0,1],[1,0],[1,1],[0,0]],
-    //[[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
-    [[1,0],[5,5],[1,1],[0,0]],
-    [[gridSize-2,gridSize-1],[6,6],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
+    [[0,1],[1,0],[1,1],[0,0]],
+    [[gridSize-1,gridSize-2],[gridSize-2,gridSize-1],[gridSize-2,gridSize-2],[gridSize-1,gridSize-1]]
   ]
 
   //Constructor function for squad objects.
